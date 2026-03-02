@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF নিচে ক্রপ ও ফিট প্রিন্টার</title>
+    <title>PDF পূর্ণ ক্রপ প্রিন্টার</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -54,20 +54,19 @@
             border-radius: 10px;
             padding: 25px;
             margin-bottom: 30px;
-        }
-        
-        .instruction {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #c53030;
-            font-weight: bold;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
         }
         
         .slider-box {
+            flex: 1;
+            min-width: 200px;
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border: 1px solid #eee;
         }
         
         .slider-label {
@@ -159,19 +158,47 @@
             @page { size: 20cm 29cm; margin: 0; }
         }
         
-        .loader {
+        .loader-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
-            z-index: 999;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 9999;
             justify-content: center;
             align-items: center;
-            color: white;
-            font-size: 24px;
             flex-direction: column;
+            color: white;
         }
-        .loader.active { display: flex; }
+        .loader-overlay.active { display: flex; }
+        
+        .loader-content {
+            width: 350px;
+            text-align: center;
+            background: #2d3748;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        
+        .progress-container {
+            width: 100%;
+            height: 20px;
+            background: #4a5568;
+            border-radius: 10px;
+            margin: 20px 0 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #48bb78, #38a169);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+        
+        .loader-text { font-size: 18px; font-weight: bold; }
+        .loader-percent { font-size: 14px; color: #cbd5e0; margin-top: 5px; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 </head>
@@ -179,7 +206,7 @@
     <div class="container">
         <div class="header">
             <h1>✂️ PANNI IT PDF CROP TOOL</h1>
-            <p>নিচের বাড়তি অংশ কাটুন</p>
+            <p>উপরে, নিচে, বাম ও ডান - চারদিক থেকেই কাটা যাবে</p>
         </div>
 
         <div class="main-content">
@@ -190,15 +217,31 @@
             </div>
 
             <div class="control-panel" id="controls" style="display:none;">
-                <div class="instruction">
-                    নিচের স্লাইডার দিয়ে ঠিক করুন কতটুকু কাটবেন। প্রিভিউতে লাল অংশটুকু কাটা হবে।
-                </div>
+                <!-- Top Crop -->
                 <div class="slider-box">
                     <div class="slider-label">
-                        <span>নিচে কাটবেন:</span>
-                        <span id="valDisplay">2.0 cm</span>
+                        <span>⬆️ উপরে কাটবেন:</span>
+                        <span id="valDisplayTop">0.0 cm</span>
                     </div>
-                    <input type="range" id="cropRange" min="0" max="10" step="0.1" value="2" oninput="updateCrop()">
+                    <input type="range" id="cropRangeTop" min="0" max="10" step="0.1" value="0" oninput="updateCrop()">
+                </div>
+
+                <!-- Bottom Crop -->
+                <div class="slider-box">
+                    <div class="slider-label">
+                        <span>⬇️ নিচে কাটবেন:</span>
+                        <span id="valDisplayBottom">2.0 cm</span>
+                    </div>
+                    <input type="range" id="cropRangeBottom" min="0" max="10" step="0.1" value="2" oninput="updateCrop()">
+                </div>
+
+                <!-- Side Crop -->
+                <div class="slider-box">
+                    <div class="slider-label">
+                        <span>↔️ বাম/ডান কাটবেন:</span>
+                        <span id="valDisplaySide">0.0 cm</span>
+                    </div>
+                    <input type="range" id="cropRangeSide" min="0" max="5" step="0.1" value="0" oninput="updateCrop()">
                 </div>
             </div>
 
@@ -208,8 +251,14 @@
         </div>
     </div>
 
-    <div class="loader" id="loader">
-        <div>⏳ প্রসেস হচ্ছে...</div>
+    <div class="loader-overlay" id="loader">
+        <div class="loader-content">
+            <div class="loader-text" id="loaderStatus">প্রস্তুত হচ্ছে...</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="loader-percent" id="loaderPercent">0%</div>
+        </div>
     </div>
 
     <div id="printArea" style="display:none;"></div>
@@ -218,7 +267,9 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
         let filesData = [];
-        let cropCm = 2.0;
+        let cropCmTop = 0.0;
+        let cropCmBottom = 2.0;
+        let cropCmSide = 0.0;
 
         async function loadFiles(inputFiles) {
             filesData = [];
@@ -236,14 +287,20 @@
                 grid.appendChild(card);
             }
             
-            document.getElementById('controls').style.display = 'block';
+            document.getElementById('controls').style.display = 'flex';
             document.getElementById('printBtn').style.display = 'block';
             updateCrop();
         }
 
         function updateCrop() {
-            cropCm = parseFloat(document.getElementById('cropRange').value);
-            document.getElementById('valDisplay').textContent = cropCm.toFixed(1) + ' cm';
+            cropCmTop = parseFloat(document.getElementById('cropRangeTop').value);
+            cropCmBottom = parseFloat(document.getElementById('cropRangeBottom').value);
+            cropCmSide = parseFloat(document.getElementById('cropRangeSide').value);
+            
+            document.getElementById('valDisplayTop').textContent = cropCmTop.toFixed(1) + ' cm';
+            document.getElementById('valDisplayBottom').textContent = cropCmBottom.toFixed(1) + ' cm';
+            document.getElementById('valDisplaySide').textContent = cropCmSide.toFixed(1) + ' cm';
+            
             filesData.forEach((_, i) => renderPreview(i));
         }
 
@@ -259,33 +316,59 @@
             
             await page.render({ canvasContext: ctx, viewport: vp }).promise;
             
-            // Calculate crop pixel for preview
-            // Page height in cm approx (assuming A4 or similar ratio for preview calculation isn't perfect but indicative)
-            const pageH_Cm = 29.7; 
-            const pxPerCm = vp.height / pageH_Cm;
-            const cutPx = cropCm * pxPerCm;
+            const pageH_Cm = 29.7;
+            const pageW_Cm = 21.0;
             
-            // Draw red overlay
+            const pxPerCmH = vp.height / pageH_Cm;
+            const pxPerCmW = vp.width / pageW_Cm;
+            
+            const cutPxTop = cropCmTop * pxPerCmH;
+            const cutPxBottom = cropCmBottom * pxPerCmH;
+            const cutPxSide = cropCmSide * pxPerCmW;
+            
             ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-            ctx.fillRect(0, vp.height - cutPx, vp.width, cutPx);
+            
+            // Draw Top Cut
+            ctx.fillRect(0, 0, vp.width, cutPxTop);
+            
+            // Draw Bottom Cut
+            ctx.fillRect(0, vp.height - cutPxBottom, vp.width, cutPxBottom);
+            
+            // Draw Side Cuts
+            ctx.fillRect(0, 0, cutPxSide, vp.height); // Left
+            ctx.fillRect(vp.width - cutPxSide, 0, cutPxSide, vp.height); // Right
         }
 
         async function printNow() {
-            document.getElementById('loader').classList.add('active');
+            let totalPages = 0;
+            filesData.forEach(item => totalPages += item.pdf.numPages);
+
+            const loader = document.getElementById('loader');
+            const progressBar = document.getElementById('progressBar');
+            const loaderStatus = document.getElementById('loaderStatus');
+            const loaderPercent = document.getElementById('loaderPercent');
+            
+            loader.classList.add('active');
+            
+            progressBar.style.width = '0%';
+            loaderPercent.textContent = '0%';
             
             const printArea = document.getElementById('printArea');
             printArea.innerHTML = '';
             printArea.style.display = 'block';
             
             const DPI = 300;
-            const PAGE_W = (20 / 2.54) * DPI; // 20cm width
-            const PAGE_H = (29 / 2.54) * DPI; // 29cm height
+            const PAGE_W = (20 / 2.54) * DPI; 
+            const PAGE_H = (29 / 2.54) * DPI;
             
+            let processedPages = 0;
+
             for (const item of filesData) {
                 for (let p = 1; p <= item.pdf.numPages; p++) {
+                    loaderStatus.textContent = `প্রসেস হচ্ছে: ${item.name} (পৃষ্ঠা ${p})`;
+                    
                     const page = await item.pdf.getPage(p);
                     
-                    // 1. Render Full Page
                     const vp = page.getViewport({ scale: DPI / 72 });
                     const tempCanvas = document.createElement('canvas');
                     tempCanvas.width = vp.width;
@@ -293,17 +376,22 @@
                     const tCtx = tempCanvas.getContext('2d');
                     await page.render({ canvasContext: tCtx, viewport: vp }).promise;
                     
-                    // 2. Calculate Crop Pixels
-                    // Formula: Pixels = CM * (DPI / 2.54)
-                    const cropPx = Math.round(cropCm * (DPI / 2.54));
+                    // Calculate Pixels
+                    const cropPxTop = Math.round(cropCmTop * (DPI / 2.54));
+                    const cropPxBottom = Math.round(cropCmBottom * (DPI / 2.54));
+                    const cropPxSide = Math.round(cropCmSide * (DPI / 2.54));
                     
-                    // 3. Define Source Area (Crop from bottom)
-                    // We take the full width, but height is reduced by cropPx
-                    let srcH = tempCanvas.height - cropPx;
-                    if (srcH <= 0) srcH = tempCanvas.height; // Safety check
+                    // Source Calculations
+                    let srcY = cropPxTop;
+                    let srcH = tempCanvas.height - cropPxTop - cropPxBottom;
                     
-                    // 4. Draw to Final Canvas (Fit to Page Height)
-                    // Since we want it to fill the page, we will scale it to fit HEIGHT
+                    let srcX = cropPxSide;
+                    let srcW = tempCanvas.width - (2 * cropPxSide);
+                    
+                    // Safety Checks
+                    if (srcH <= 0) srcH = tempCanvas.height;
+                    if (srcW <= 0) srcW = tempCanvas.width;
+                    
                     const finalCanvas = document.createElement('canvas');
                     finalCanvas.width = PAGE_W;
                     finalCanvas.height = PAGE_H;
@@ -312,38 +400,42 @@
                     fCtx.fillStyle = 'white';
                     fCtx.fillRect(0, 0, PAGE_W, PAGE_H);
                     
-                    // Calculate scale to fill HEIGHT
+                    // Scale to fit height
                     const scale = PAGE_H / srcH;
-                    const drawW = tempCanvas.width * scale;
+                    const drawW = srcW * scale;
                     const drawH = PAGE_H;
-                    
-                    // Center horizontally if wider than page, else start from left
                     const drawX = (PAGE_W - drawW) / 2;
                     
-                    // Draw the cropped portion
                     fCtx.drawImage(tempCanvas, 
-                        0, 0, tempCanvas.width, srcH, // Source: Cut bottom
-                        drawX, 0, drawW, drawH        // Dest: Fill height, top aligned
+                        srcX, srcY, srcW, srcH, 
+                        drawX, 0, drawW, drawH
                     );
                     
-                    // Append
                     const div = document.createElement('div');
                     div.className = 'print-page';
                     const img = document.createElement('img');
                     img.src = finalCanvas.toDataURL('image/jpeg', 0.9);
                     img.style.width = '100%';
                     img.style.height = '100%';
-                    img.style.objectFit = 'contain'; // Fallback
+                    img.style.objectFit = 'contain';
                     div.appendChild(img);
                     printArea.appendChild(div);
+
+                    processedPages++;
+                    const percent = Math.round((processedPages / totalPages) * 100);
+                    progressBar.style.width = percent + '%';
+                    loaderPercent.textContent = percent + '%';
                 }
             }
             
-            document.getElementById('loader').classList.remove('active');
+            loaderStatus.textContent = 'প্রিন্ট উইন্ডো আসছে...';
             
             setTimeout(() => {
                 window.print();
-                setTimeout(() => { printArea.style.display = 'none'; }, 500);
+                setTimeout(() => { 
+                    printArea.style.display = 'none'; 
+                    loader.classList.remove('active');
+                }, 500);
             }, 300);
         }
     </script>

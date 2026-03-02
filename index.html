@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF নিচে ক্রপ ও ফিট প্রিন্টার</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        
+        .header {
+            background: white;
+            border-radius: 20px 20px 0 0;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .header h1 { color: #1e3c72; font-size: 32px; margin-bottom: 10px; }
+        .header p { color: #e53e3e; font-size: 16px; font-weight: bold; }
+        
+        .main-content {
+            background: white;
+            padding: 30px;
+            border-radius: 0 0 20px 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .upload-area {
+            border: 4px dashed #cbd5e0;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 30px;
+        }
+        
+        .upload-area:hover { border-color: #48bb78; background: #f0fff4; }
+        .upload-area i { font-size: 64px; color: #48bb78; margin-bottom: 20px; display: block; }
+        .upload-area h3 { color: #2d3748; font-size: 24px; margin-bottom: 10px; }
+        .upload-area input { display: none; }
+        
+        .control-panel {
+            background: #fff5f5;
+            border: 2px solid #fed7d7;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .instruction {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #c53030;
+            font-weight: bold;
+        }
+        
+        .slider-box {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .slider-label span { color: #e53e3e; font-size: 20px; }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 10px;
+            background: #e2e8f0;
+            border-radius: 5px;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #e53e3e;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .pdf-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .pdf-card {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+        
+        .pdf-card canvas {
+            width: 100%;
+            height: 150px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .pdf-card .name { font-size: 12px; margin-top: 5px; color: #4a5568; }
+
+        .btn-print {
+            display: block;
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto;
+            padding: 15px;
+            background: #48bb78;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .btn-print:hover { background: #38a169; transform: scale(1.05); }
+
+        @media print {
+            body * { visibility: hidden; }
+            #printArea, #printArea * { visibility: visible; }
+            #printArea {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            .print-page {
+                width: 20cm;
+                height: 29cm;
+                margin: 0;
+                padding: 0;
+                background: white;
+                overflow: hidden;
+            }
+            @page { size: 20cm 29cm; margin: 0; }
+        }
+        
+        .loader {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+            flex-direction: column;
+        }
+        .loader.active { display: flex; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✂️ নিচে কেটে ফিট করুন</h1>
+            <p>নিচে কাটলে ছবি বড় হয়ে পেজ জুড়ে থাকবে (সাদা জায়গা থাকবে না)</p>
+        </div>
+
+        <div class="main-content">
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <i>📤</i>
+                <h3>PDF সিলেক্ট করুন</h3>
+                <input type="file" id="fileInput" accept=".pdf" multiple hidden onchange="loadFiles(this.files)">
+            </div>
+
+            <div class="control-panel" id="controls" style="display:none;">
+                <div class="instruction">
+                    নিচের স্লাইডার দিয়ে ঠিক করুন কতটুকু কাটবেন। প্রিভিউতে লাল অংশটুকু কাটা হবে।
+                </div>
+                <div class="slider-box">
+                    <div class="slider-label">
+                        <span>নিচে কাটবেন:</span>
+                        <span id="valDisplay">2.0 cm</span>
+                    </div>
+                    <input type="range" id="cropRange" min="0" max="10" step="0.1" value="2" oninput="updateCrop()">
+                </div>
+            </div>
+
+            <div class="pdf-grid" id="grid"></div>
+
+            <button class="btn-print" id="printBtn" style="display:none;" onclick="printNow()">🖨️ প্রিন্ট করুন</button>
+        </div>
+    </div>
+
+    <div class="loader" id="loader">
+        <div>⏳ প্রসেস হচ্ছে...</div>
+    </div>
+
+    <div id="printArea" style="display:none;"></div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        let filesData = [];
+        let cropCm = 2.0;
+
+        async function loadFiles(inputFiles) {
+            filesData = [];
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            
+            for (const file of inputFiles) {
+                const buf = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(buf).promise;
+                filesData.push({ pdf, name: file.name });
+                
+                const card = document.createElement('div');
+                card.className = 'pdf-card';
+                card.innerHTML = `<canvas id="cv-${filesData.length-1}"></canvas><div class="name">${file.name}</div>`;
+                grid.appendChild(card);
+            }
+            
+            document.getElementById('controls').style.display = 'block';
+            document.getElementById('printBtn').style.display = 'block';
+            updateCrop();
+        }
+
+        function updateCrop() {
+            cropCm = parseFloat(document.getElementById('cropRange').value);
+            document.getElementById('valDisplay').textContent = cropCm.toFixed(1) + ' cm';
+            filesData.forEach((_, i) => renderPreview(i));
+        }
+
+        async function renderPreview(index) {
+            const item = filesData[index];
+            const page = await item.pdf.getPage(1);
+            const vp = page.getViewport({ scale: 0.25 });
+            
+            const canvas = document.getElementById(`cv-${index}`);
+            canvas.width = vp.width;
+            canvas.height = vp.height;
+            const ctx = canvas.getContext('2d');
+            
+            await page.render({ canvasContext: ctx, viewport: vp }).promise;
+            
+            // Calculate crop pixel for preview
+            // Page height in cm approx (assuming A4 or similar ratio for preview calculation isn't perfect but indicative)
+            const pageH_Cm = 29.7; 
+            const pxPerCm = vp.height / pageH_Cm;
+            const cutPx = cropCm * pxPerCm;
+            
+            // Draw red overlay
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.fillRect(0, vp.height - cutPx, vp.width, cutPx);
+        }
+
+        async function printNow() {
+            document.getElementById('loader').classList.add('active');
+            
+            const printArea = document.getElementById('printArea');
+            printArea.innerHTML = '';
+            printArea.style.display = 'block';
+            
+            const DPI = 300;
+            const PAGE_W = (20 / 2.54) * DPI; // 20cm width
+            const PAGE_H = (29 / 2.54) * DPI; // 29cm height
+            
+            for (const item of filesData) {
+                for (let p = 1; p <= item.pdf.numPages; p++) {
+                    const page = await item.pdf.getPage(p);
+                    
+                    // 1. Render Full Page
+                    const vp = page.getViewport({ scale: DPI / 72 });
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = vp.width;
+                    tempCanvas.height = vp.height;
+                    const tCtx = tempCanvas.getContext('2d');
+                    await page.render({ canvasContext: tCtx, viewport: vp }).promise;
+                    
+                    // 2. Calculate Crop Pixels
+                    // Formula: Pixels = CM * (DPI / 2.54)
+                    const cropPx = Math.round(cropCm * (DPI / 2.54));
+                    
+                    // 3. Define Source Area (Crop from bottom)
+                    // We take the full width, but height is reduced by cropPx
+                    let srcH = tempCanvas.height - cropPx;
+                    if (srcH <= 0) srcH = tempCanvas.height; // Safety check
+                    
+                    // 4. Draw to Final Canvas (Fit to Page Height)
+                    // Since we want it to fill the page, we will scale it to fit HEIGHT
+                    const finalCanvas = document.createElement('canvas');
+                    finalCanvas.width = PAGE_W;
+                    finalCanvas.height = PAGE_H;
+                    const fCtx = finalCanvas.getContext('2d');
+                    
+                    fCtx.fillStyle = 'white';
+                    fCtx.fillRect(0, 0, PAGE_W, PAGE_H);
+                    
+                    // Calculate scale to fill HEIGHT
+                    const scale = PAGE_H / srcH;
+                    const drawW = tempCanvas.width * scale;
+                    const drawH = PAGE_H;
+                    
+                    // Center horizontally if wider than page, else start from left
+                    const drawX = (PAGE_W - drawW) / 2;
+                    
+                    // Draw the cropped portion
+                    fCtx.drawImage(tempCanvas, 
+                        0, 0, tempCanvas.width, srcH, // Source: Cut bottom
+                        drawX, 0, drawW, drawH        // Dest: Fill height, top aligned
+                    );
+                    
+                    // Append
+                    const div = document.createElement('div');
+                    div.className = 'print-page';
+                    const img = document.createElement('img');
+                    img.src = finalCanvas.toDataURL('image/jpeg', 0.9);
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'contain'; // Fallback
+                    div.appendChild(img);
+                    printArea.appendChild(div);
+                }
+            }
+            
+            document.getElementById('loader').classList.remove('active');
+            
+            setTimeout(() => {
+                window.print();
+                setTimeout(() => { printArea.style.display = 'none'; }, 500);
+            }, 300);
+        }
+    </script>
+</body>
+</html>
